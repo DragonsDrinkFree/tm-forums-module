@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Forums</title>
+    <link rel="stylesheet" href="forums.css" />
+  </head>
+  <body>
+    <main>
+      <!-- Package pages can't submit forms (their frame is sandboxed): buttons do it. -->
+      <div class="row spread">
+        <nav id="crumbs" class="crumbs" aria-label="Where you are"></nav>
+        <div class="row">
+          <input id="query" class="grow" aria-label="Search the forums" placeholder="Search…" />
+          <select id="scope" aria-label="Search where"></select>
+          <button id="search" type="button">Search</button>
+          <button id="roles-btn" type="button" hidden>Roles</button>
+        </div>
+      </div>
+      <section id="view" aria-live="polite"></section>
+    </main>
+    <script src="common.js"></script>
+    <script src="board.js"></script>
+  </body>
+</html>

@@ -1,0 +1,217 @@
+/* Forums: the app's theme tokens (ADR 0092), as every package page gets them. */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg, Canvas);
+  color: var(--text, CanvasText);
+  font-family: var(--font-body, system-ui, sans-serif);
+  font-size: var(--font-size-sm, 13px);
+}
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+}
+h1 {
+  margin: 4px 0;
+  font-size: 1.25em;
+}
+h2 {
+  margin: 0;
+  font-size: 1.05em;
+}
+button {
+  border: 1px solid var(--border, GrayText);
+  border-radius: 4px;
+  background: var(--bg-raised, ButtonFace);
+  color: inherit;
+  font: inherit;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.link {
+  border: none;
+  background: none;
+  color: var(--accent, LinkText);
+  padding: 0;
+  text-align: left;
+}
+button.primary {
+  background: var(--accent, Highlight);
+  color: var(--accent-text, HighlightText);
+  border-color: transparent;
+}
+button.small {
+  padding: 1px 6px;
+  font-size: 0.9em;
+}
+button.danger {
+  color: var(--danger, red);
+}
+input,
+textarea,
+select {
+  width: 100%;
+  border: 1px solid var(--border, GrayText);
+  border-radius: 4px;
+  background: var(--bg-input, Field);
+  color: inherit;
+  font: inherit;
+  padding: 3px 6px;
+}
+input[type='checkbox'] {
+  width: auto;
+}
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.row.spread {
+  justify-content: space-between;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.meta {
+  margin: 2px 0 0;
+  color: var(--text-muted, GrayText);
+  font-size: 0.9em;
+}
+.tag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--bg-raised, ButtonFace);
+  border: 1px solid var(--border, GrayText);
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+.badge {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--accent, Highlight);
+  color: var(--accent-text, HighlightText);
+  font-size: 0.8em;
+  font-weight: 700;
+  text-align: center;
+}
+.badge[hidden] {
+  display: none;
+}
+ul.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+ul.list > li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, GrayText);
+}
+li.unread .title {
+  font-weight: 700;
+}
+.post {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 12px;
+}
+.post .who {
+  font-weight: 600;
+}
+.post .text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0 0 6px;
+}
+.compose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border, GrayText);
+  padding-top: 8px;
+}
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+#status[data-tone='danger'] {
+  color: var(--danger, red);
+}
+
+/* Toolbox */
+details.section > summary {
+  cursor: pointer;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+  padding: 6px 2px;
+  color: var(--text-muted, GrayText);
+}
+.cat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.cat:hover {
+  background: var(--bg-raised, ButtonFace);
+}
+.cat .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cat.has-unread .name {
+  font-weight: 700;
+}
+
+/* Roles editor */
+.roles {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+}
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+table.grants {
+  border-collapse: collapse;
+  width: 100%;
+}
+table.grants td,
+table.grants th {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border, GrayText);
+  text-align: left;
+}
+@media (max-width: 640px) {
+  .post,
+  .roles {
+    grid-template-columns: 1fr;
+  }
+}
