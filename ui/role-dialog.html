@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Role</title>
+    <link rel="stylesheet" href="forums.css" />
+  </head>
+  <body>
+    <main>
+      <div class="row">
+        <input id="name" class="grow" aria-label="Role name" placeholder="Role name" />
+        <input id="color" type="color" aria-label="Colour" style="width: 56px" />
+      </div>
+      <label class="row"><input id="admin" type="checkbox" /> Forum admin: makes sections, categories and roles</label>
+      <label class="row"><input id="moderator" type="checkbox" /> Moderator everywhere: pin, lock, edit and remove</label>
+      <label class="row"><input id="banned" type="checkbox" /> Banned: can read, cannot post</label>
+      <h2>Category access</h2>
+      <p class="meta">Private categories are visible only to roles granted Read or more.</p>
+      <div class="scroll" style="max-height: 220px">
+        <table class="grants"><tbody id="grants"></tbody></table>
+      </div>
+      <div class="row">
+        <span class="grow"></span>
+        <button type="button" id="cancel">Cancel</button>
+        <button type="button" id="save" class="primary">Save</button>
+      </div>
+    </main>
+    <script src="common.js"></script>
+    <script src="role-dialog.js"></script>
+  </body>
+</html>

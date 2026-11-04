@@ -193,6 +193,14 @@ tavern.actions.register('category-delete', (ctx) => {
 
 // ---- roles (admins) ---------------------------------------------------------------------------
 
+/** Make a role's members exactly `ids` (core keeps them; we apply the difference). */
+function setMembers(name, ids) {
+  const want = new Set(ids);
+  const current = tavern.roles.list().find((r) => r.name === name).members.map((m) => m.id);
+  for (const id of current) if (!want.has(id)) tavern.roles.remove(name, id);
+  for (const id of want) if (!current.includes(id)) tavern.roles.add(name, id);
+}
+
 const slug = (label) =>
   label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'role';
 
@@ -214,11 +222,8 @@ tavern.actions.register('role-save', (ctx) => {
     name = `f-${slug(label)}-${Math.random().toString(36).slice(2, 6)}`;
     tavern.roles.create(name, label);
   }
-  // Members: core keeps them; we only apply the difference.
-  const want = new Set((a.members || []).map(String));
-  const current = tavern.roles.list().find((r) => r.name === name).members.map((m) => m.id);
-  for (const id of current) if (!want.has(id)) tavern.roles.remove(name, id);
-  for (const id of want) if (!current.includes(id)) tavern.roles.add(name, id);
+  // Members are optional here: omitting them leaves who is in the role alone.
+  if (Array.isArray(a.members)) setMembers(name, a.members.map(String));
 
   const data = {
     role: name,
@@ -234,6 +239,17 @@ tavern.actions.register('role-save', (ctx) => {
   else tavern.collections.create('role-settings', { data });
   syncReaders();
   return { role: name };
+});
+
+/** Add and/or remove some members of a role. */
+tavern.actions.register('role-members', (ctx) => {
+  const denied = needAdmin(ctx);
+  if (denied) return denied;
+  const name = String(ctx.args.role);
+  if (!tavern.roles.list().some((r) => r.name === name)) return fail('No such role');
+  for (const id of ctx.args.add || []) tavern.roles.add(name, String(id));
+  for (const id of ctx.args.remove || []) tavern.roles.remove(name, String(id));
+  return { ok: true };
 });
 
 tavern.actions.register('role-delete', (ctx) => {

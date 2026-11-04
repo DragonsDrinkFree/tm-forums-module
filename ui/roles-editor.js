@@ -1,153 +1,142 @@
-// The roles editor, shared by the module's settings page (the GM's gear) and the Forums tab's
-// Roles view (for forum admins who aren't the GM). Roles themselves are core's package roles
-// (members, pickers, `role:` readers); this adds what each means for the forums.
+// The roles panel, shared by the module's settings page (the GM's gear) and the Forums tab's Roles
+// view. One self-contained, scrolling section:
+//   left  : every role (+ New role, which opens the permissions dialog)
+//   right : the chosen role's members, with a filter, Add member, and remove
+// Roles are core's package roles (members, `role:` readers); the permissions are ours.
 /* global tavern, TMF */
 window.TMFRoles = (() => {
   const { el, button, run, note } = TMF;
 
   async function mount(root) {
-    let selected = null; // a role's name, 'new', or null
+    let selected = null; // a role's name
+    let filter = '';
 
-    async function draw() {
+    const load = async () => {
       const [roles, settings, tree] = await Promise.all([
         tavern.roles.list(),
         tavern.collections.query('role-settings', { limit: 100 }),
         TMF.loadTree(),
       ]);
       const byRole = new Map(settings.records.map((r) => [r.data.role, r.data]));
-      const cats = tree.flatMap((t) => t.categories.map((c) => ({ ...c, sectionName: t.section.data.name })));
-      const picked = roles.find((r) => r.name === selected);
-
-      const list = el(
-        'div',
-        {},
-        el('h2', { textContent: 'Forum roles' }),
-        el(
-          'ul',
-          { className: 'list' },
-          ...roles.map((r) => {
-            const d = byRole.get(r.name) || {};
-            return el(
-              'li',
-              {},
-              el('span', { className: 'swatch', style: `background:${d.color || '#8a8a8a'}` }),
-              button(r.label, () => { selected = r.name; void draw(); }, { className: 'link' }),
-              d.admin ? el('span', { className: 'tag', textContent: 'admin' }) : null,
-              d.moderator ? el('span', { className: 'tag', textContent: 'mod' }) : null,
-              d.banned ? el('span', { className: 'tag', textContent: 'banned' }) : null,
-              el('p', { className: 'meta', textContent: `${r.members.length} members` }),
-            );
-          }),
-        ),
-        button('+ New role', () => { selected = 'new'; void draw(); }),
+      const cats = tree.flatMap((t) =>
+        t.categories.map((c) => ({ id: c.id, label: `${t.section.data.name} › ${c.data.name}` })),
       );
-      const editor =
-        selected === 'new' || picked
-          ? editorFor(picked, picked ? byRole.get(picked.name) || {} : {}, cats)
-          : el('p', { className: 'meta', textContent: 'Pick a role, or make a new one.' });
-      root.replaceChildren(el('div', { className: 'roles' }, list, editor));
+      // One shape: core's role (label, members) plus our settings for it.
+      const all = roles.map((r) => ({ ...r, ...(byRole.get(r.name) || {}), label: r.label }));
+      return { all, cats };
+    };
+
+    async function openDialog(role, cats) {
+      return tavern.ui.dialog({
+        page: 'ui/role-dialog.html',
+        title: role ? `Edit ${role.label}` : 'New role',
+        size: { width: 520, height: 560 },
+        data: { role: role || null, cats },
+      });
     }
 
-    function editorFor(role, d, cats) {
-      const state = {
-        members: role ? role.members.map((m) => ({ ...m })) : [],
-        grants: { ...(d.grants || {}) },
-      };
-      const name = el('input', { value: role ? role.label : '', ariaLabel: 'Role name', placeholder: 'Role name' });
-      const color = el('input', { type: 'color', value: d.color || '#8a8a8a', ariaLabel: 'Colour' });
-      const flag = (label, checked) => {
-        const box = el('input', { type: 'checkbox', checked: !!checked });
-        return { box, node: el('label', { className: 'row' }, box, label) };
-      };
-      const admin = flag('Forum admin: makes sections, categories and roles', d.admin);
-      const mod = flag('Moderator everywhere: pin, lock, edit and remove', d.moderator);
-      const banned = flag('Banned: can read, cannot post', d.banned);
+    // `force` redraws always (our own changes). Without it (focus, someone else's change) nothing is
+    // rebuilt unless the data differs: rebuilding between a click's press and release loses the click.
+    let lastSig = '';
+    async function draw(force = true) {
+      const { all, cats } = await load();
+      const sig = JSON.stringify([all, cats]);
+      if (!force && sig === lastSig) return;
+      lastSig = sig;
+      if (selected && !all.some((r) => r.name === selected)) selected = null;
+      const role = all.find((r) => r.name === selected) || null;
 
-      const grantRows = cats.map((c) => {
-        const sel = el(
-          'select',
-          { ariaLabel: `Access to ${c.data.name}`, onchange: () => (state.grants[c.id] = sel.value) },
-          ...[['', 'Default'], ['read', 'Read'], ['post', 'Read & post'], ['moderate', 'Moderate']].map(
-            ([v, l]) => el('option', { value: v, textContent: l, selected: (state.grants[c.id] || '') === v }),
-          ),
-        );
-        return el('tr', {}, el('td', { textContent: `${c.sectionName} › ${c.data.name}` }), el('td', {}, sel));
-      });
-
-      const chips = el('div', { className: 'row' });
-      const drawChips = () =>
-        chips.replaceChildren(
-          ...state.members.map((m) =>
-            el('span', { className: 'tag' }, `${m.name} `,
-              button('×', () => { state.members = state.members.filter((x) => x.id !== m.id); drawChips(); },
-                { className: 'link', ariaLabel: `Remove ${m.name}` })),
-          ),
-        );
-      drawChips();
-      const find = el('input', { ariaLabel: 'Find a member', placeholder: 'Find a member to add…' });
-      const found = el('div', { className: 'row' });
-      find.addEventListener('input', async () => {
-        if (find.value.trim().length < 2) return found.replaceChildren();
-        const { members } = await tavern.members.list({ query: find.value.trim(), limit: 8 });
-        found.replaceChildren(
-          ...members
-            .filter((m) => !state.members.some((x) => x.id === m.id))
-            .map((m) =>
-              button(`+ ${m.name}`, () => {
-                state.members.push({ id: m.id, name: m.name });
-                found.replaceChildren();
-                find.value = '';
-                drawChips();
-              }, { className: 'small' }),
-            ),
-        );
-      });
-
-      return el(
+      // ---- left: roles
+      const left = el(
         'div',
-        { className: 'compose' },
-        el('h2', { textContent: role ? `Edit ${role.label}` : 'New role' }),
-        el('div', { className: 'row' }, name, color),
-        admin.node, mod.node, banned.node,
-        el('h2', { textContent: 'Category access' }),
-        el('p', { className: 'meta', textContent: 'Private categories are visible only to roles granted Read or more.' }),
-        cats.length
-          ? el('table', { className: 'grants' }, el('tbody', {}, ...grantRows))
-          : el('p', { className: 'meta', textContent: 'No categories yet.' }),
-        el('h2', { textContent: 'Members' }),
-        chips, find, found,
-        el(
-          'div',
-          { className: 'row' },
-          button('Save role', async () => {
-            const saved = await run('role-save', {
-              ...(role ? { role: role.name } : {}),
-              name: name.value,
-              color: color.value,
-              admin: admin.box.checked,
-              moderator: mod.box.checked,
-              banned: banned.box.checked,
-              grants: Object.fromEntries(Object.entries(state.grants).filter(([, v]) => v)),
-              members: state.members.map((m) => m.id),
-            });
-            if (saved) { selected = saved.role; note('Role saved', 'success'); void draw(); }
-          }, { className: 'primary' }),
-          role
-            ? button('Delete role', async () => {
-                if (await tavern.ui.confirm(`Delete the role **${role.label}**?`, { ok: 'Delete' })) {
-                  await run('role-delete', { role: role.name });
-                  selected = null;
+        { className: 'rm-left' },
+        el('div', { className: 'rm-head' },
+          el('h2', { textContent: 'Roles' }),
+          button('+ New role', async () => {
+            const out = await openDialog(null, cats);
+            if (!out) return;
+            const saved = await run('role-save', out);
+            if (saved) { selected = saved.role; note('Role created', 'success'); void draw(); }
+          }, { className: 'small primary' })),
+        el('div', { className: 'scroll' },
+          all.length
+            ? el('ul', { className: 'list' },
+                ...all.map((r) =>
+                  el('li', { className: `rrow${r.name === selected ? ' on' : ''}` },
+                    el('span', { className: 'swatch', style: `background:${r.color || '#8a8a8a'}` }),
+                    button(r.label, () => { selected = r.name; filter = ''; void draw(); }, { className: 'link grow' }),
+                    r.admin ? el('span', { className: 'tag', textContent: 'admin' }) : null,
+                    r.moderator ? el('span', { className: 'tag', textContent: 'mod' }) : null,
+                    r.banned ? el('span', { className: 'tag', textContent: 'banned' }) : null,
+                    el('span', { className: 'meta', textContent: String(r.members.length) }))))
+            : el('p', { className: 'meta', textContent: 'No roles yet.' })),
+      );
+
+      // ---- right: members of the chosen role
+      let right;
+      if (!role) {
+        right = el('div', { className: 'rm-right' },
+          el('p', { className: 'meta', textContent: all.length ? 'Pick a role to see its members.' : 'Make a role to begin.' }));
+      } else {
+        const shown = role.members.filter((m) => m.name.toLowerCase().includes(filter.toLowerCase()));
+        const search = el('input', {
+          value: filter, ariaLabel: 'Filter this role’s members', placeholder: 'Filter members…',
+          oninput: () => { filter = search.value; drawList(); },
+        });
+        const list = el('ul', { className: 'list' });
+        const drawList = () => {
+          const rows = role.members.filter((m) => m.name.toLowerCase().includes(filter.toLowerCase()));
+          list.replaceChildren(
+            ...(rows.length
+              ? rows.map((m) =>
+                  el('li', { className: 'row spread' },
+                    el('span', { textContent: m.name }),
+                    button('Remove', async () => {
+                      if (await run('role-members', { role: role.name, remove: [m.id] })) void draw();
+                    }, { className: 'small danger' })))
+              : [el('li', { className: 'meta', textContent: role.members.length ? 'No one matches.' : 'No members yet.' })]),
+          );
+        };
+        drawList();
+        void shown;
+        right = el('div', { className: 'rm-right' },
+          el('div', { className: 'rm-head' },
+            el('h2', { textContent: `${role.label} · ${role.members.length} member${role.members.length === 1 ? '' : 's'}` }),
+            el('span', { className: 'row' },
+              button('Permissions…', async () => {
+                const out = await openDialog(role, cats);
+                if (out && (await run('role-save', { role: role.name, ...out }))) {
+                  note('Role saved', 'success');
                   void draw();
                 }
-              }, { className: 'danger' })
-            : null,
-        ),
-      );
+              }, { className: 'small' }),
+              button('Delete', async () => {
+                if (!(await tavern.ui.confirm(`Delete the role **${role.label}**?`, { ok: 'Delete' }))) return;
+                if (await run('role-delete', { role: role.name })) { selected = null; void draw(); }
+              }, { className: 'small danger' }))),
+          el('div', { className: 'row' },
+            el('span', { className: 'grow' }, search),
+            button('+ Add member', async () => {
+              const picked = await tavern.ui.dialog({
+                page: 'ui/member-picker.html',
+                title: `Add members to ${role.label}`,
+                size: { width: 460, height: 480 },
+                data: { exclude: role.members.map((m) => m.id) },
+              });
+              if (picked && picked.length && (await run('role-members', { role: role.name, add: picked.map((m) => m.id) }))) {
+                void draw();
+              }
+            }, { className: 'primary' })),
+          el('div', { className: 'scroll' }, list),
+        );
+      }
+      root.replaceChildren(el('div', { className: 'rm' }, left, right));
     }
 
     await draw();
-    // Follow changes made elsewhere (the GM's own member pickers, another admin).
-    tavern.collections.subscribe('role-settings', {}, () => void draw());
+    // Follow changes made elsewhere (the GM's own pickers, another admin).
+    tavern.collections.subscribe('role-settings', {}, () => void draw(false));
+    window.addEventListener('focus', () => void draw(false));
   }
 
   return { mount };

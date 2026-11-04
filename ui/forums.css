@@ -247,10 +247,43 @@ details.section > summary {
 }
 
 /* Roles editor */
-.roles {
+.scroll {
+  overflow-y: auto;
+  min-height: 0;
+}
+/* The roles panel: a fixed-height section that scrolls inside itself. */
+.rm {
   display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: 16px;
+  grid-template-columns: 240px 1fr;
+  height: 440px;
+  border: 1px solid var(--border, GrayText);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.rm-left,
+.rm-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+}
+.rm-left {
+  border-right: 1px solid var(--border, GrayText);
+}
+.rm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rrow.on {
+  background: var(--bg-raised, ButtonFace);
 }
 .swatch {
   display: inline-block;
@@ -271,7 +304,7 @@ table.grants th {
 }
 @media (max-width: 640px) {
   .pcard,
-  .roles {
+  .rm {
     grid-template-columns: 1fr;
   }
   .pside {

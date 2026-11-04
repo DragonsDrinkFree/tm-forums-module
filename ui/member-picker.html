@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Add members</title>
+    <link rel="stylesheet" href="forums.css" />
+  </head>
+  <body>
+    <main>
+      <input id="find" aria-label="Find a member" placeholder="Search members by name…" />
+      <div class="scroll" style="height: 260px"><ul class="list" id="found"></ul></div>
+      <div class="row" id="picked"></div>
+      <div class="row">
+        <span class="grow"></span>
+        <button type="button" id="cancel">Cancel</button>
+        <button type="button" id="done" class="primary">Add</button>
+      </div>
+    </main>
+    <script src="common.js"></script>
+    <script src="member-picker.js"></script>
+  </body>
+</html>
