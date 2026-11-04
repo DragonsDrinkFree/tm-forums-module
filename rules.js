@@ -273,7 +273,7 @@ tavern.actions.register('thread-create', (ctx) => {
   if (!roomFor(ctx.user)) return fail(`You have ${MAX_POSTS_PER_MEMBER} posts here: remove some first`);
   const now = Date.now();
   const thread = tavern.collections.create('threads', {
-    data: { title, category: got.cat.id, pinned: false, locked: false, lastPost: now, replies: 0 },
+    data: { title, category: got.cat.id, pinned: false, locked: false, lastPost: now, lastBy: ctx.user.id, replies: 0 },
     parent: got.cat.id,
   });
   const post = tavern.collections.create('posts', {
@@ -294,7 +294,11 @@ tavern.actions.register('reply', (ctx) => {
   if (!roomFor(ctx.user)) return fail(`You have ${MAX_POSTS_PER_MEMBER} posts here: remove some first`);
   const post = addPost(ctx, thread, body);
   tavern.collections.update('threads', thread.id, {
-    data: { lastPost: post.data.at, replies: Number(thread.data.replies || 0) + 1 },
+    data: {
+      lastPost: post.data.at,
+      lastBy: ctx.user.id,
+      replies: Number(thread.data.replies || 0) + 1,
+    },
   });
   return post;
 });

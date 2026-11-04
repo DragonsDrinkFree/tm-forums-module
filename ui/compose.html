@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Write a post</title>
+    <link rel="stylesheet" href="forums.css" />
+  </head>
+  <body>
+    <main>
+      <h1 id="heading">New topic</h1>
+      <input id="title" aria-label="Subject" placeholder="Subject" />
+      <div class="row" id="tools">
+        <button type="button" data-wrap="**" class="small"><b>B</b></button>
+        <button type="button" data-wrap="*" class="small"><i>i</i></button>
+        <button type="button" data-wrap="`" class="small">code</button>
+        <button type="button" id="quote" class="small">Quote</button>
+        <span class="grow"></span>
+        <button type="button" id="toggle" class="small">Preview</button>
+      </div>
+      <textarea id="body" aria-label="Message" rows="14" placeholder="Write your post…"></textarea>
+      <div id="preview" class="text" hidden></div>
+      <div class="row">
+        <span class="grow"></span>
+        <button type="button" id="cancel">Cancel</button>
+        <button type="button" id="submit" class="primary">Submit</button>
+      </div>
+    </main>
+    <script src="common.js"></script>
+    <script src="compose.js"></script>
+  </body>
+</html>

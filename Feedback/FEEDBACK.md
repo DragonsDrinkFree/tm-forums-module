@@ -60,3 +60,10 @@ never shows the selected state.
 **Would remove it:** draw the icon as a CSS mask (`mask: url(…) center / contain no-repeat;
 background: currentColor`) so it inherits the rail's colour and states, or inline the SVG after
 sanitising it.
+
+## F08: `undefined` in arguments fails with a path-only error
+
+`tavern.actions.run('x', { role: undefined })` is refused with `Invalid input → at [1].role`. That is
+correct (undefined isn't JSON), and the path is helpful, but a plain "undefined isn't allowed" would
+save a round trip, and dropping undefined keys (as `JSON.stringify` does) would be friendlier. Our bug
+(F-ours, fixed); noted because the same trap exists in `collections.search(…, { where: undefined })`.

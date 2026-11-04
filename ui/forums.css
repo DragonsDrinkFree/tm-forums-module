@@ -131,18 +131,68 @@ ul.list > li {
 li.unread .title {
   font-weight: 700;
 }
-.post {
+.table {
+  border: 1px solid var(--border, GrayText);
+  border-radius: 4px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.thead,
+.trow {
   display: grid;
-  grid-template-columns: 130px 1fr;
-  gap: 12px;
+  grid-template-columns: 1fr 80px 190px;
+  gap: 8px;
+  padding: 7px 10px;
+  align-items: center;
 }
-.post .who {
-  font-weight: 600;
+.thead {
+  background: var(--accent, Highlight);
+  color: var(--accent-text, HighlightText);
+  font-size: 0.8em;
+  font-weight: 700;
+  text-transform: uppercase;
 }
-.post .text {
-  white-space: pre-wrap;
+.trow {
+  border-top: 1px solid var(--border, GrayText);
+}
+.trow:nth-child(even) {
+  background: var(--bg-raised, ButtonFace);
+}
+.trow.unread .title {
+  font-weight: 700;
+}
+.num {
+  text-align: center;
+}
+.pcard {
+  display: grid;
+  grid-template-columns: 1fr 170px;
+  border: 1px solid var(--border, GrayText);
+  border-radius: 4px;
+  margin: 8px 0;
+  background: var(--bg-raised, ButtonFace);
+}
+.pmain {
+  padding: 10px 12px;
+  min-width: 0;
+}
+.pside {
+  padding: 10px 12px;
+  border-left: 1px solid var(--border, GrayText);
+}
+.who {
+  font-weight: 700;
+  color: var(--accent, LinkText);
+}
+.text {
   overflow-wrap: anywhere;
-  margin: 0 0 6px;
+  margin: 8px 0;
+}
+.text blockquote {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent, GrayText);
+  background: var(--bg, Canvas);
 }
 .compose {
   display: flex;
@@ -220,8 +270,16 @@ table.grants th {
   text-align: left;
 }
 @media (max-width: 640px) {
-  .post,
+  .pcard,
   .roles {
     grid-template-columns: 1fr;
+  }
+  .pside {
+    border-left: none;
+    border-top: 1px solid var(--border, GrayText);
+  }
+  .thead,
+  .trow {
+    grid-template-columns: 1fr 50px 100px;
   }
 }

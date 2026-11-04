@@ -121,7 +121,7 @@ window.TMFRoles = (() => {
           { className: 'row' },
           button('Save role', async () => {
             const saved = await run('role-save', {
-              role: role ? role.name : undefined,
+              ...(role ? { role: role.name } : {}),
               name: name.value,
               color: color.value,
               admin: admin.box.checked,

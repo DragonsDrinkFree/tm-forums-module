@@ -160,10 +160,32 @@
     await run('mark-read', { category: catId });
   }
 
+  /** The "write a post" window (ui/compose.html): answers { title, body } or null. */
+  async function compose(args) {
+    return tavern.ui.dialog({
+      page: 'ui/compose.html',
+      title: args.heading,
+      size: { width: 680, height: 540 },
+      data: args,
+    });
+  }
+
+  async function newTopic(cat) {
+    const out = await compose({ mode: 'topic', heading: `New topic in ${cat.data.name}` });
+    if (!out) return;
+    const made = await run('thread-create', { category: cat.id, title: out.title, body: out.body });
+    if (made) go({ kind: 'thread', category: cat, thread: made.thread });
+  }
+
+  async function postReply(t, quote) {
+    const out = await compose({ mode: 'reply', heading: `Re: ${t.data.title}`, quote });
+    if (out) await run('reply', { thread: t.id, body: out.body });
+  }
+
   async function category(cat) {
     const level = levelOf(cat.id);
     if (!view.opened) {
-      // Remember what was new when it was opened, so threads stay highlighted while the counter clears.
+      // Remember what was new when it was opened, so topics stay highlighted while the dot clears.
       const marks = await tavern.collections.query('reads', { where: { category: cat.id }, limit: 1 });
       readAtOnOpen = marks.records[0] ? marks.records[0].data.at : 0;
       view.opened = true;
@@ -178,170 +200,168 @@
       }),
     ]);
     void markRead(cat.id);
+    const total = await tavern.collections.count('threads', { parent: cat.id });
     const row = async (t) =>
       el(
-        'li',
-        { className: t.data.lastPost > readAtOnOpen && t.author !== perms.id ? 'unread' : '' },
+        'div',
+        { className: `trow${t.data.lastPost > readAtOnOpen && t.author !== perms.id ? ' unread' : ''}` },
         el(
           'div',
-          { className: 'row spread' },
-          el(
-            'span',
-            { className: 'grow' },
-            button(t.data.title, () => go({ kind: 'thread', category: cat, thread: t }), {
-              className: 'link title',
-            }),
-            t.data.pinned ? el('span', { className: 'tag', textContent: 'Pinned' }) : null,
-            t.data.locked ? el('span', { className: 'tag', textContent: 'Locked' }) : null,
-            el('p', {
-              className: 'meta',
-              textContent: `Started by ${await nameOf(t.author)} · ${full(t.created)}`,
-            }),
-          ),
-          el('span', {
+          {},
+          button(t.data.title, () => go({ kind: 'thread', category: cat, thread: t }), {
+            className: 'link title',
+          }),
+          t.data.pinned ? el('span', { className: 'tag', textContent: 'Pinned' }) : null,
+          t.data.locked ? el('span', { className: 'tag', textContent: 'Locked' }) : null,
+          el('p', {
             className: 'meta',
-            title: full(t.data.lastPost),
-            textContent: `${t.data.replies || 0} repl${t.data.replies === 1 ? 'y' : 'ies'} · last ${when(t.data.lastPost)}`,
+            textContent: `by ${await nameOf(t.author)} » ${full(t.created)}`,
           }),
         ),
+        el('div', { className: 'num', textContent: String(t.data.replies || 0) }),
+        el(
+          'div',
+          { className: 'last' },
+          el('div', { textContent: `by ${await nameOf(t.data.lastBy || t.author)}` }),
+          el('div', { className: 'meta', title: full(t.data.lastPost), textContent: when(t.data.lastPost) }),
+        ),
       );
-    const rows = await Promise.all([...pinned.records, ...rest.records].map(row));
+    const head = (label) =>
+      el('div', { className: 'thead' }, el('div', { textContent: label }), el('div', { className: 'num', textContent: 'Replies' }),
+        el('div', { className: 'last', textContent: 'Last post' }));
+    const group = (label, list) =>
+      list.length
+        ? el('div', { className: 'table' }, head(label), ...list)
+        : null;
+    const [pinRows, restRows] = await Promise.all([
+      Promise.all(pinned.records.map(row)),
+      Promise.all(rest.records.map(row)),
+    ]);
+    const canPost = rank(level) >= rank('post');
     const out = [
+      el('h1', { textContent: cat.data.name }),
+      cat.data.about ? el('p', { className: 'meta', textContent: cat.data.about }) : null,
       el(
         'div',
         { className: 'row spread' },
-        el('h1', { textContent: cat.data.name }),
-        perms.admin ? button('Edit category', () => void editCategory(cat), { className: 'small' }) : null,
+        el(
+          'span',
+          { className: 'row' },
+          canPost
+            ? button('New Topic ✎', () => void newTopic(cat), { className: 'primary' })
+            : el('span', { className: 'meta', textContent: 'Read only for you' }),
+          perms.admin ? button('Edit category', () => void editCategory(cat), { className: 'small' }) : null,
+        ),
+        el('span', { className: 'meta', textContent: `${total} topic${total === 1 ? '' : 's'}` }),
       ),
-      cat.data.about ? el('p', { className: 'meta', textContent: cat.data.about }) : null,
-      rows.length
-        ? el('ul', { className: 'list', ariaLabel: 'Threads, newest activity first' }, ...rows)
-        : el('p', { className: 'meta', textContent: 'No threads yet.' }),
-    ];
+      group('Pinned', pinRows),
+      group('Topics', restRows),
+    ].filter(Boolean);
+    if (!pinRows.length && !restRows.length) {
+      out.push(el('p', { className: 'meta', textContent: 'No topics yet. Start one with New Topic.' }));
+    }
     if (rest.next) {
       out.push(
-        button('Load older threads', () => {
+        button('Load older topics', () => {
           view.pages = (view.pages || 1) + 1;
           void render();
         }),
       );
     }
-    if (rank(level) >= rank('post')) out.push(newThreadForm(cat));
-    else out.push(el('p', { className: 'meta', textContent: 'You can read this category but not post in it.' }));
     return out;
-  }
-
-  function newThreadForm(cat) {
-    const title = el('input', { ariaLabel: 'Thread title', placeholder: 'Title' });
-    const text = el('textarea', { ariaLabel: 'First post', rows: 5, placeholder: 'Say something…' });
-    return el(
-      'div',
-      { className: 'compose' },
-      el('h2', { textContent: 'Start a thread' }),
-      title,
-      text,
-      button(
-        'Post thread',
-        async () => {
-          const made = await run('thread-create', { category: cat.id, title: title.value, body: text.value });
-          if (made) go({ kind: 'thread', category: cat, thread: made.thread });
-        },
-        { className: 'primary' },
-      ),
-    );
   }
 
   async function thread(t, cat) {
     const level = levelOf(cat.id);
     const mod = rank(level) >= rank('moderate');
-    const { records } = await tavern.collections.query('posts', { parent: t.id, sort: 'created', limit: 100 });
+    const canReply = rank(level) >= rank('post') && (!t.data.locked || mod);
+    const [{ records }, roles] = await Promise.all([
+      tavern.collections.query('posts', { parent: t.id, sort: 'created', limit: 100 }),
+      tavern.roles.list().catch(() => []),
+    ]);
     void markRead(cat.id);
-    const posts = await Promise.all(
-      records.map(async (p) => {
+    const rolesOfUser = (id) => roles.filter((r) => r.members.some((m) => m.id === id)).map((r) => r.label);
+    const counts = new Map();
+    const postsBy = (id) => {
+      if (!counts.has(id)) counts.set(id, tavern.collections.count('posts', { author: id }));
+      return counts.get(id);
+    };
+    const cards = await Promise.all(
+      records.map(async (p, i) => {
         const mine = p.author === perms.id;
+        const who = await nameOf(p.author);
+        const body = el('div', { className: 'text' });
+        void TMF.renderPost(body, p.data.body);
+        const tools = el(
+          'div',
+          { className: 'row' },
+          canReply
+            ? button('❝ Quote', () => void postReply(t, { who, text: p.data.body }), { className: 'small' })
+            : null,
+          mine || mod ? button('Edit', () => void editPost(p), { className: 'small' }) : null,
+          mine || mod ? button('Remove', () => void removePost(p), { className: 'small danger' }) : null,
+        );
         return el(
-          'li',
-          { className: 'post' },
+          'div',
+          { className: 'pcard' },
           el(
             'div',
-            {},
-            el('div', { className: 'who', textContent: await nameOf(p.author) }),
-            el('div', { className: 'meta', title: full(p.created), textContent: when(p.created) }),
+            { className: 'pmain' },
+            el('div', { className: 'row spread' },
+              el('h2', { textContent: i === 0 ? t.data.title : `Re: ${t.data.title}` }), tools),
+            el('p', { className: 'meta', title: full(p.created), textContent: `by ${who} » ${full(p.created)}` }),
+            body,
+            p.data.edited ? el('p', { className: 'meta', textContent: `Edited ${full(p.data.edited)}` }) : null,
           ),
           el(
             'div',
-            {},
-            (() => {
-              const body = el('div', { className: 'text' });
-              void TMF.renderPost(body, p.data.body);
-              return body;
-            })(),
-            p.data.edited
-              ? el('p', { className: 'meta', textContent: `Edited ${when(p.data.edited)}` })
-              : null,
-            mine || mod
-              ? el(
-                  'div',
-                  { className: 'row' },
-                  button('Edit', () => void editPost(p), { className: 'small' }),
-                  button('Remove', () => void removePost(p), { className: 'small danger' }),
-                )
-              : null,
+            { className: 'pside' },
+            el('div', { className: 'who', textContent: who }),
+            ...rolesOfUser(p.author).map((r) => el('div', { className: 'meta', textContent: r })),
+            el('div', { className: 'meta', textContent: `Posts: ${await postsBy(p.author)}` }),
           ),
         );
       }),
     );
-    const out = [el('h1', { textContent: t.data.title })];
-    if (mod) {
-      out.push(
-        el(
-          'div',
+    const replyBtn = () =>
+      canReply
+        ? button('Post Reply ↩', () => void postReply(t), { className: 'primary' })
+        : el('span', {
+            className: 'meta',
+            textContent: t.data.locked ? 'This topic is locked.' : 'You can read this category but not post in it.',
+          });
+    const modTools = mod
+      ? el(
+          'span',
           { className: 'row' },
-          button(t.data.pinned ? 'Unpin' : 'Pin', () => void run('thread-mod', { id: t.id, pinned: !t.data.pinned }), {
-            className: 'small',
-          }),
-          button(t.data.locked ? 'Unlock' : 'Lock', () => void run('thread-mod', { id: t.id, locked: !t.data.locked }), {
-            className: 'small',
-          }),
+          button(t.data.pinned ? 'Unpin' : 'Pin', () => void run('thread-mod', { id: t.id, pinned: !t.data.pinned }), { className: 'small' }),
+          button(t.data.locked ? 'Unlock' : 'Lock', () => void run('thread-mod', { id: t.id, locked: !t.data.locked }), { className: 'small' }),
           button('Rename', async () => {
-            const title = await tavern.ui.prompt('Thread title', t.data.title);
+            const title = await tavern.ui.prompt('Topic subject', t.data.title);
             if (title) await run('thread-mod', { id: t.id, title });
           }, { className: 'small' }),
-          button('Remove thread', async () => {
-            if (await tavern.ui.confirm('Remove this thread and all its replies?', { ok: 'Remove' }))
+          button('Remove topic', async () => {
+            if (await tavern.ui.confirm('Remove this topic and all its replies?', { ok: 'Remove' }))
               await run('thread-mod', { id: t.id, remove: true });
           }, { className: 'small danger' }),
-        ),
-      );
-    }
-    out.push(el('ul', { className: 'list', ariaLabel: 'Posts, oldest first' }, ...posts));
-    if (t.data.locked && !mod) out.push(el('p', { className: 'meta', textContent: 'This thread is locked.' }));
-    else if (rank(level) >= rank('post')) {
-      const text = el('textarea', { ariaLabel: 'Reply', rows: 4, placeholder: 'Write a reply…' });
-      out.push(
-        el(
-          'div',
-          { className: 'compose' },
-          text,
-          button(
-            'Reply',
-            async () => {
-              if (await run('reply', { thread: t.id, body: text.value })) text.value = '';
-            },
-            { className: 'primary' },
-          ),
-        ),
-      );
-    }
-    return out;
+        )
+      : null;
+    const bar = () =>
+      el('div', { className: 'row spread' }, replyBtn(), el('span', { className: 'meta', textContent: `${records.length} post${records.length === 1 ? '' : 's'}` }));
+    return [
+      el('h1', { textContent: t.data.title }),
+      el('div', { className: 'row spread' }, bar(), modTools),
+      ...cards,
+      bar(),
+    ];
   }
 
   // ---- search ----------------------------------------------------------------------------------
   async function results({ text, scope }) {
-    const where = scope && scope !== 'all' ? { category: scope } : undefined;
+    const filter = scope && scope !== 'all' ? { where: { category: scope } } : {};
     const [threads, posts] = await Promise.all([
-      tavern.collections.search('threads', text, { where }),
-      tavern.collections.search('posts', text, { where }),
+      tavern.collections.search('threads', text, filter),
+      tavern.collections.search('posts', text, filter),
     ]);
     const open = async (threadId) => {
       const t = await tavern.collections.get('threads', threadId);
@@ -398,8 +418,8 @@
   }
 
   async function editPost(p) {
-    const body = await tavern.ui.prompt('Edit post', p.data.body);
-    if (body) await run('post-edit', { id: p.id, body });
+    const out = await compose({ mode: 'edit', heading: 'Edit post', body: p.data.body });
+    if (out) await run('post-edit', { id: p.id, body: out.body });
   }
   async function removePost(p) {
     if (!(await tavern.ui.confirm('Remove this post?', { ok: 'Remove' }))) return;
