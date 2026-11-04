@@ -106,7 +106,7 @@
       const rows = await Promise.all(
         categories.map(async (c) => {
           const [unread, threads] = await Promise.all([
-            TMF.unreadIn(c.id, perms.id),
+            TMF.hasUnread(c.id, perms.id),
             tavern.collections.count('threads', { parent: c.id }),
           ]);
           return el(
@@ -128,11 +128,7 @@
                 c.data.about ? el('p', { className: 'meta', textContent: c.data.about }) : null,
               ),
               el('span', { className: 'meta', textContent: `${threads} thread${threads === 1 ? '' : 's'}` }),
-              el('span', {
-                className: 'badge',
-                textContent: unread > 99 ? '99+' : String(unread),
-                hidden: !unread,
-              }),
+              el('span', { className: 'dot', hidden: !unread, title: 'New posts', ariaLabel: 'New posts' }),
               perms.admin
                 ? button('Edit', () => void editCategory(c), { className: 'small' })
                 : null,
@@ -275,7 +271,11 @@
           el(
             'div',
             {},
-            el('p', { className: 'text', textContent: p.data.body }),
+            (() => {
+              const body = el('div', { className: 'text' });
+              void TMF.renderPost(body, p.data.body);
+              return body;
+            })(),
             p.data.edited
               ? el('p', { className: 'meta', textContent: `Edited ${when(p.data.edited)}` })
               : null,
@@ -410,130 +410,9 @@
   // ---- admin: roles ----------------------------------------------------------------------------
   async function rolesView() {
     if (!perms.admin) return [el('p', { textContent: 'Only forum admins manage roles.' })];
-    const [{ records: roles }, tree] = await Promise.all([
-      tavern.collections.query('roles', { sort: 'name', limit: 100 }),
-      TMF.loadTree(),
-    ]);
-    const cats = tree.flatMap((t) => t.categories.map((c) => ({ ...c, sectionName: t.section.data.name })));
-    const picked = view.roleId === 'new' ? null : roles.find((r) => r.id === view.roleId);
-    const list = el(
-      'div',
-      {},
-      el('h2', { textContent: 'Roles' }),
-      el(
-        'ul',
-        { className: 'list' },
-        ...roles.map((r) =>
-          el(
-            'li',
-            {},
-            el('span', { className: 'swatch', style: `background:${r.data.color}` }),
-            button(r.data.name, () => { view.roleId = r.id; void render(); }, { className: 'link' }),
-            r.data.admin ? el('span', { className: 'tag', textContent: 'admin' }) : null,
-            r.data.moderator ? el('span', { className: 'tag', textContent: 'mod' }) : null,
-            r.data.banned ? el('span', { className: 'tag', textContent: 'banned' }) : null,
-            el('p', { className: 'meta', textContent: `${(r.data.members || []).length} members` }),
-          ),
-        ),
-      ),
-      button('+ New role', () => { view.roleId = 'new'; void render(); }),
-    );
-    const editor =
-      view.roleId === 'new' || picked
-        ? roleEditor(picked, cats)
-        : el('p', { className: 'meta', textContent: 'Pick a role, or make a new one.' });
-    return [el('div', { className: 'roles' }, list, editor)];
-  }
-
-  function roleEditor(role, cats) {
-    const d = role ? role.data : { name: '', color: '#8a8a8a', grants: {}, members: [] };
-    const state = { members: [...(d.members || [])], grants: { ...(d.grants || {}) } };
-    const name = el('input', { value: d.name, ariaLabel: 'Role name', placeholder: 'Role name' });
-    const color = el('input', { type: 'color', value: d.color || '#8a8a8a', ariaLabel: 'Colour' });
-    const flag = (label, checked) => {
-      const box = el('input', { type: 'checkbox', checked: !!checked });
-      return { box, node: el('label', { className: 'row' }, box, label) };
-    };
-    const admin = flag('Forum admin: creates sections and categories, manages roles', d.admin);
-    const mod = flag('Moderator everywhere: pin, lock, edit and remove', d.moderator);
-    const banned = flag('Banned: can read, cannot post', d.banned);
-
-    const grantRows = cats.map((c) => {
-      const sel = el(
-        'select',
-        { ariaLabel: `Access to ${c.data.name}`, onchange: () => (state.grants[c.id] = sel.value) },
-        ...[['', 'Default'], ['read', 'Read'], ['post', 'Read & post'], ['moderate', 'Moderate']].map(
-          ([v, l]) => el('option', { value: v, textContent: l, selected: (state.grants[c.id] || '') === v }),
-        ),
-      );
-      return el('tr', {}, el('td', { textContent: `${c.sectionName} › ${c.data.name}` }), el('td', {}, sel));
-    });
-
-    const chips = el('div', { className: 'row' });
-    const drawChips = async () => {
-      chips.replaceChildren(
-        ...(await Promise.all(
-          state.members.map(async (id) =>
-            el('span', { className: 'tag' }, `${await nameOf(id)} `,
-              button('×', () => { state.members = state.members.filter((m) => m !== id); void drawChips(); },
-                { className: 'link', ariaLabel: 'Remove member' })),
-          ),
-        )),
-      );
-    };
-    void drawChips();
-    const find = el('input', { ariaLabel: 'Find a member', placeholder: 'Find a member to add…' });
-    const found = el('div', { className: 'row' });
-    find.addEventListener('input', async () => {
-      if (find.value.trim().length < 2) return found.replaceChildren();
-      const { members } = await tavern.members.list({ query: find.value.trim(), limit: 8 });
-      found.replaceChildren(
-        ...members
-          .filter((m) => !state.members.includes(m.id))
-          .map((m) => button(`+ ${m.name}`, () => {
-            state.members.push(m.id);
-            found.replaceChildren();
-            find.value = '';
-            void drawChips();
-          }, { className: 'small' })),
-      );
-    });
-
-    return el(
-      'div',
-      { className: 'compose' },
-      el('h2', { textContent: role ? `Edit ${d.name}` : 'New role' }),
-      el('div', { className: 'row' }, name, color),
-      admin.node, mod.node, banned.node,
-      el('h2', { textContent: 'Category access' }),
-      el('p', { className: 'meta', textContent: 'Private categories are visible only to roles granted Read or more.' }),
-      cats.length
-        ? el('table', { className: 'grants' }, el('tbody', {}, ...grantRows))
-        : el('p', { className: 'meta', textContent: 'No categories yet.' }),
-      el('h2', { textContent: 'Members' }),
-      chips, find, found,
-      el(
-        'div',
-        { className: 'row' },
-        button('Save role', async () => {
-          const saved = await run('role-save', {
-            id: role ? role.id : undefined, name: name.value, color: color.value,
-            admin: admin.box.checked, moderator: mod.box.checked, banned: banned.box.checked,
-            grants: Object.fromEntries(Object.entries(state.grants).filter(([, v]) => v)),
-            members: state.members,
-          });
-          if (saved) { view.roleId = saved.id; note('Role saved', 'success'); }
-        }, { className: 'primary' }),
-        role
-          ? button('Delete role', async () => {
-              if (await tavern.ui.confirm(`Delete the role **${d.name}**?`, { ok: 'Delete' })) {
-                await run('role-delete', { id: role.id });
-                view.roleId = undefined;
-              }
-            }, { className: 'danger' })
-          : null,
-      ),
-    );
+    const host = el('div');
+    void TMFRoles.mount(host);
+    return [host];
   }
 
   // ---- wiring ----------------------------------------------------------------------------------
@@ -553,20 +432,6 @@
     );
   }
 
-  async function follow(record) {
-    // The toolbox asked us to show something (rules.js `nav-set`).
-    const { category: catId, thread: threadId } = record.data;
-    if (!catId) return;
-    const cat = await tavern.collections.get('categories', catId);
-    if (!cat) return;
-    if (threadId) {
-      const t = await tavern.collections.get('threads', threadId);
-      if (t) return go({ kind: 'thread', category: cat, thread: t }, { push: view.kind !== 'home' });
-    }
-    go({ kind: 'category', category: cat }, { push: view.kind !== 'home' });
-    void fillScope();
-  }
-
   async function start() {
     perms = (await TMF.loadPerms()) || perms;
     $('roles-btn').hidden = !perms.admin;
@@ -574,16 +439,12 @@
     $('search').onclick = () => void search();
     $('query').addEventListener('keydown', (e) => e.key === 'Enter' && void search());
     await fillScope();
-    // Anything already waiting from the toolbox, then everything that arrives while we're open.
-    const waiting = await tavern.collections.query('nav', { limit: 1 });
-    if (waiting.records[0] && Date.now() - waiting.records[0].data.stamp < 30_000) {
-      await follow(waiting.records[0]);
-    } else go({ kind: 'home' }, { push: false });
-    tavern.collections.subscribe('nav', {}, (changes) => {
-      const c = changes.find((x) => x.record);
-      if (c) void follow(c.record);
-    });
-    tavern.collections.subscribe('roles', {}, async () => {
+    // The toolbox opens a tab per category, handing us which one (`key` = the category's id).
+    const args = (await tavern.ui.args()) || {};
+    const cat = args.category ? await tavern.collections.get('categories', args.category) : null;
+    if (cat) go({ kind: 'category', category: cat }, { push: false });
+    else go({ kind: 'home' }, { push: false });
+    tavern.collections.subscribe('role-settings', {}, async () => {
       perms = (await TMF.loadPerms()) || perms;
       $('roles-btn').hidden = !perms.admin;
       if (view.kind === 'roles') void render();

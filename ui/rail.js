@@ -9,26 +9,15 @@
   let hinted = false;
 
   // ---- opening the tab ------------------------------------------------------------------------
-  // GAP (see Feedback/FEEDBACK.md F01): a rail page has no documented way to open a workspace tab.
-  // We (1) tell the viewer's Forums tab where to go through the `nav` record it is subscribed to,
-  // and (2) ask for the tab to open if this app offers a call for it. Until it does, the viewer
-  // opens the tab once from the Widgets menu, and it then follows every click here.
-  async function openCategory(cat) {
-    await run('nav-set', { category: cat.id });
-    const workspace = tavern.workspace;
-    if (workspace && typeof workspace.openWidget === 'function') {
-      try {
-        await workspace.openWidget('board', { category: cat.id });
-        return;
-      } catch {
-        /* fall through to the hint */
-      }
-    }
-    if (!hinted) {
-      hinted = true;
-      note('Open Forums from the Widgets menu: it will show this category.', 'info');
-    }
-  }
+  // One workspace tab per category (key = the category's id); opening it again shows the one open.
+  const openCategory = (cat) =>
+    tavern.workspace.openTab('board', {
+      key: cat.id,
+      title: `Forums: ${cat.data.name}`,
+      args: { category: cat.id },
+    });
+  const openListing = () =>
+    tavern.workspace.openTab('board', { key: 'listing', title: 'Forums', args: {} });
 
   // ---- dialogs for the two admin buttons ------------------------------------------------------
   async function addSection() {
@@ -82,7 +71,7 @@
     const unread = new Map();
     await Promise.all(
       tree.flatMap((t) =>
-        t.categories.map(async (c) => unread.set(c.id, await TMF.unreadIn(c.id, perms.id))),
+        t.categories.map(async (c) => unread.set(c.id, await TMF.hasUnread(c.id, perms.id))),
       ),
     );
     const nodes = tree.map(({ section, categories }) => {
@@ -92,7 +81,7 @@
         { className: 'section', open: store.get(key) !== 'closed' },
         el('summary', { textContent: section.data.name }),
         ...categories.map((c) => {
-          const n = unread.get(c.id) || 0;
+          const n = !!unread.get(c.id);
           return el(
             'button',
             {
@@ -104,10 +93,10 @@
             el('span', { className: 'name', textContent: c.data.name }),
             c.data.access === 'private' ? el('span', { className: 'tag', textContent: 'private' }) : null,
             el('span', {
-              className: 'badge',
-              textContent: n > 99 ? '99+' : String(n),
+              className: 'dot',
               hidden: !n,
-              ariaLabel: `${n} unread`,
+              title: 'New posts',
+              ariaLabel: 'New posts',
             }),
           );
         }),
@@ -137,6 +126,7 @@
   }
 
   async function start() {
+    $('browse').onclick = () => void openListing();
     $('add-section').onclick = () => void addSection();
     $('add-category').onclick = () => void addCategory();
     await load();

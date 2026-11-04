@@ -92,20 +92,32 @@ window.TMF = (() => {
     }));
   }
 
-  /** Posts in a category by other members since the viewer last looked. Capped, to stay cheap. */
-  async function unreadIn(categoryId, me) {
+  /**
+   * Is there anything new in a category? True when another member has posted since the viewer
+   * last looked. One record is enough to know, so this never counts.
+   */
+  async function hasUnread(categoryId, me) {
     const marks = await tavern.collections.query('reads', {
       where: { category: categoryId },
       limit: 1,
     });
     const at = marks.records[0] ? marks.records[0].data.at : 0;
-    const where = { category: categoryId, at: { gt: at } };
-    const [total, mine] = await Promise.all([
-      tavern.collections.count('posts', { where }),
-      tavern.collections.count('posts', { where, author: me }),
-    ]);
-    return Math.max(0, total - mine);
+    const fresh = await tavern.collections.query('posts', {
+      where: { category: categoryId, at: { gt: at } },
+      notAuthor: me,
+      limit: 1,
+    });
+    return fresh.records.length > 0;
   }
 
-  return { el, button, when, full, nameOf, note, run, store, ACCESS, loadPerms, loadTree, unreadIn };
+  /** Another member's writing: Markdown, but with no live `@action` links (they'd run as the reader). */
+  async function renderPost(target, body) {
+    try {
+      target.innerHTML = await tavern.markdown.render(body, { enrichers: false });
+    } catch {
+      target.textContent = body;
+    }
+  }
+
+  return { el, button, when, full, nameOf, note, run, store, ACCESS, loadPerms, loadTree, hasUnread, renderPost };
 })();

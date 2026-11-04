@@ -109,6 +109,16 @@ input[type='checkbox'] {
 .badge[hidden] {
   display: none;
 }
+.dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent, Highlight);
+}
+.dot[hidden] {
+  display: none;
+}
 ul.list {
   margin: 0;
   padding: 0;

@@ -8,9 +8,9 @@
 //   sections   -> organisational headers in the toolbox
 //   categories -> boards (parent: a section). access: 'open' | 'announce' | 'private'
 //   threads    -> parent: a category.   posts -> parent: a thread (the first post opens the thread)
-//   roles      -> admin-made roles: { name, color, admin, moderator, banned, grants, members }
-//   reads      -> one per member per category: when they last looked (drives unread counters)
-//   nav        -> one per member: "open this category/thread" hand-off from the toolbox to the tab
+//   roles      -> core's own package roles (tavern.roles.create/rename/delete) hold names + members
+//   role-settings -> what each means here: { role, color, admin, moderator, banned, grants }
+//   reads      -> one per member per category: when they last looked (drives the unread dot)
 //
 // Permission levels, low to high: none < read < post < moderate < admin.
 
@@ -36,48 +36,66 @@ const all = (collection, query = {}) => {
 
 // ---- who may do what ---------------------------------------------------------------------------
 
-function rolesOf(userId) {
-  return all('roles').filter((r) => (r.data.members || []).includes(userId));
+/** Core's roles joined with this module's settings for them. */
+function allRoles() {
+  const defs = new Map(all('role-settings').map((d) => [d.data.role, d]));
+  return tavern.roles.list().map((r) => {
+    const d = defs.get(r.name);
+    return {
+      name: r.name,
+      label: r.label,
+      members: r.members.map((m) => m.id),
+      color: d ? d.data.color : '#8a8a8a',
+      admin: !!(d && d.data.admin),
+      moderator: !!(d && d.data.moderator),
+      banned: !!(d && d.data.banned),
+      grants: (d && d.data.grants) || {},
+    };
+  });
 }
 
+const rolesOf = (userId, roles = allRoles()) => roles.filter((r) => r.members.includes(userId));
+
 function isAdmin(user) {
-  return user.role === 'gm' || rolesOf(user.id).some((r) => r.data.admin);
+  return user.role === 'gm' || rolesOf(user.id).some((r) => r.admin);
+}
+
+/** A role's own level on a category (before the category's open/announce/private default). */
+function roleLevel(role, catId) {
+  if (role.admin) return 'admin';
+  const level = role.moderator ? 'moderate' : 'none';
+  const g = role.grants[catId];
+  return LEVELS.includes(g) ? maxLevel(level, g) : level;
 }
 
 /** A member's level on a category, from its access setting and the roles they hold. */
 function levelOn(user, cat, roles = rolesOf(user.id)) {
-  if (user.role === 'gm' || roles.some((r) => r.data.admin)) return 'admin';
+  if (user.role === 'gm' || roles.some((r) => r.admin)) return 'admin';
   const access = cat.data.access || 'open';
   let level = access === 'open' ? 'post' : access === 'announce' ? 'read' : 'none';
-  for (const r of roles) {
-    if (r.data.moderator) level = maxLevel(level, 'moderate');
-    const g = (r.data.grants || {})[cat.id];
-    if (LEVELS.includes(g)) level = maxLevel(level, g);
-  }
+  for (const r of roles) level = maxLevel(level, roleLevel(r, cat.id));
   // A banned member keeps whatever they could read, and can't write.
-  if (roles.some((r) => r.data.banned) && rank(level) > rank('read')) level = 'read';
+  if (roles.some((r) => r.banned) && rank(level) > rank('read')) level = 'read';
   return level;
 }
 
-/** Everyone who must be named as a reader of a private category. */
-function readersFor(cat, roles, memberLevel) {
-  if ((cat.data.access || 'open') !== 'private') return null;
-  const ids = new Set();
-  for (const r of roles) {
-    for (const id of r.data.members || []) {
-      if (memberLevel(id, r) !== 'none') ids.add(id);
-    }
-  }
-  return ['server:gm', ...[...ids].map((id) => `user:${id}`)];
-}
-
-/** Re-label every private category's readers after roles or categories change. */
+/**
+ * Re-label each private category's readers: the GM, and every role that can read it. Core joins on
+ * role membership, so adding someone to a role needs no recompute: this runs only when a role's
+ * settings or a category's access change.
+ */
 function syncReaders() {
-  const roles = all('roles');
+  const roles = allRoles();
   for (const cat of all('categories')) {
-    const readers = readersFor(cat, roles, (id) =>
-      levelOn({ id, role: 'player' }, cat, roles.filter((r) => (r.data.members || []).includes(id))),
-    );
+    const readers =
+      (cat.data.access || 'open') === 'private'
+        ? [
+            'server:gm',
+            ...roles
+              .filter((r) => rank(roleLevel(r, cat.id)) >= rank('read'))
+              .map((r) => `role:${r.name}`),
+          ]
+        : null;
     tavern.collections.update('categories', cat.id, { readers });
   }
 }
@@ -96,10 +114,23 @@ function categoryFor(ctx, id, atLeast) {
 
 tavern.actions.register('perms', (ctx) => {
   const roles = rolesOf(ctx.user.id);
-  const admin = ctx.user.role === 'gm' || roles.some((r) => r.data.admin);
+  const admin = ctx.user.role === 'gm' || roles.some((r) => r.admin);
   const levels = {};
-  for (const cat of all('categories')) levels[cat.id] = levelOn(ctx.user, cat, roles);
-  return { id: ctx.user.id, admin, levels, roles: roles.map((r) => r.data.name) };
+  const cats = all('categories');
+  for (const cat of cats) levels[cat.id] = levelOn(ctx.user, cat, roles);
+  // A member's very first visit starts clean: no dots for what was posted before they came.
+  const mine = tavern.collections.query('reads', { author: ctx.user.id, limit: 1 });
+  if (!mine.records.length) {
+    const now = Date.now();
+    for (const cat of cats) {
+      if (rank(levels[cat.id]) < rank('read')) continue;
+      tavern.collections.create('reads', {
+        data: { category: cat.id, at: now },
+        readers: [`user:${ctx.user.id}`],
+      });
+    }
+  }
+  return { id: ctx.user.id, admin, levels, roles: roles.map((r) => r.label) };
 });
 
 // ---- sections and categories (admins) ----------------------------------------------------------
@@ -121,11 +152,12 @@ tavern.actions.register('section-save', (ctx) => {
 tavern.actions.register('section-delete', (ctx) => {
   const denied = needAdmin(ctx);
   if (denied) return denied;
-  const id = String(ctx.args.id);
-  if (tavern.collections.count('categories', { parent: id }) > 0) {
+  try {
+    // The sections collection is `onDelete: "restrict"`: core refuses while categories remain.
+    return { removed: tavern.collections.delete('sections', String(ctx.args.id)) };
+  } catch (err) {
     return fail('Move or remove its categories first');
   }
-  return { removed: tavern.collections.delete('sections', id) };
 });
 
 tavern.actions.register('category-save', (ctx) => {
@@ -161,38 +193,59 @@ tavern.actions.register('category-delete', (ctx) => {
 
 // ---- roles (admins) ---------------------------------------------------------------------------
 
+const slug = (label) =>
+  label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'role';
+
 tavern.actions.register('role-save', (ctx) => {
   const denied = needAdmin(ctx);
   if (denied) return denied;
   const a = ctx.args;
-  const name = text(a.name, 40);
-  if (!name) return fail('A role needs a name');
+  const label = text(a.name, 40);
+  if (!label) return fail('A role needs a name');
   const grants = {};
   for (const [catId, level] of Object.entries(a.grants || {})) {
     if (['read', 'post', 'moderate'].includes(level)) grants[catId] = level;
   }
+  let name = a.role ? String(a.role) : null;
+  if (name) {
+    if (!tavern.roles.list().some((r) => r.name === name)) return fail('No such role');
+    tavern.roles.rename(name, label);
+  } else {
+    name = `f-${slug(label)}-${Math.random().toString(36).slice(2, 6)}`;
+    tavern.roles.create(name, label);
+  }
+  // Members: core keeps them; we only apply the difference.
+  const want = new Set((a.members || []).map(String));
+  const current = tavern.roles.list().find((r) => r.name === name).members.map((m) => m.id);
+  for (const id of current) if (!want.has(id)) tavern.roles.remove(name, id);
+  for (const id of want) if (!current.includes(id)) tavern.roles.add(name, id);
+
   const data = {
-    name,
+    role: name,
     color: /^#[0-9a-f]{6}$/i.test(a.color || '') ? a.color : '#8a8a8a',
     admin: !!a.admin,
     moderator: !!a.moderator,
     banned: !!a.banned,
     grants,
-    members: [...new Set((a.members || []).map(String))].slice(0, 500),
   };
-  const role = a.id
-    ? tavern.collections.update('roles', String(a.id), { data })
-    : tavern.collections.create('roles', { data });
+  const existing = tavern.collections.query('role-settings', { where: { role: name }, limit: 1 })
+    .records[0];
+  if (existing) tavern.collections.update('role-settings', existing.id, { data });
+  else tavern.collections.create('role-settings', { data });
   syncReaders();
-  return role;
+  return { role: name };
 });
 
 tavern.actions.register('role-delete', (ctx) => {
   const denied = needAdmin(ctx);
   if (denied) return denied;
-  const removed = tavern.collections.delete('roles', String(ctx.args.id));
+  const name = String(ctx.args.role);
+  tavern.roles.delete(name);
+  for (const d of tavern.collections.query('role-settings', { where: { role: name } }).records) {
+    tavern.collections.delete('role-settings', d.id);
+  }
   syncReaders();
-  return { removed };
+  return { removed: true };
 });
 
 // ---- threads and posts -------------------------------------------------------------------------
@@ -294,9 +347,9 @@ tavern.actions.register('thread-mod', (ctx) => {
   return tavern.collections.update('threads', thread.id, { data });
 });
 
-// ---- unread, and the toolbox -> tab hand-off ---------------------------------------------------
+// ---- unread ---------------------------------------------------
 
-/** "I have looked at this category now": the unread counter counts posts after `at`. */
+/** "I have looked at this category now": it shows a dot while others' posts are newer than `at`. */
 tavern.actions.register('mark-read', (ctx) => {
   const got = categoryFor(ctx, ctx.args.category, 'read');
   if (got.error) return got;
@@ -304,16 +357,4 @@ tavern.actions.register('mark-read', (ctx) => {
   const data = { category: got.cat.id, at: Date.now() };
   if (mine.records[0]) return tavern.collections.update('reads', mine.records[0].id, { data });
   return tavern.collections.create('reads', { data, readers: [`user:${ctx.user.id}`] });
-});
-
-/** The toolbox says "show the viewer this"; their open Forums tab is subscribed and follows. */
-tavern.actions.register('nav-set', (ctx) => {
-  const data = {
-    category: text(ctx.args.category, 64),
-    thread: text(ctx.args.thread, 64),
-    stamp: Date.now(),
-  };
-  const mine = tavern.collections.query('nav', { author: ctx.user.id });
-  if (mine.records[0]) return tavern.collections.update('nav', mine.records[0].id, { data });
-  return tavern.collections.create('nav', { data, readers: [`user:${ctx.user.id}`] });
 });

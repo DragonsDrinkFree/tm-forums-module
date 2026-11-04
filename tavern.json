@@ -3,12 +3,20 @@
   "id": "tm-forums",
   "kind": "module",
   "name": "Forums",
-  "version": "0.1.0",
-  "description": "Web-style forums for Moot Halls and campaigns. Sections group categories; categories hold threads and replies, kept as on-demand collection records. Roles made by admins grant per-category access, moderation or admin rights. Unread counters on every category.",
-  "authors": ["Dragons Drink Free"],
-  "places": ["hall", "campaign"],
+  "version": "0.2.0",
+  "description": "Web-style forums for Moot Halls and campaigns. Sections group categories; each category opens in its own workspace tab and holds threads and replies, kept as on-demand collection records. Roles made by admins grant per-category access, moderation or admin rights. A dot marks categories with new posts.",
+  "authors": [
+    "Dragons Drink Free"
+  ],
+  "places": [
+    "hall",
+    "campaign"
+  ],
   "rules": "rules.js",
-  "permissions": ["ui.rail:forums", "ui.widget:board"],
+  "permissions": [
+    "ui.rail:forums",
+    "ui.tab:board"
+  ],
   "features": [
     {
       "id": "forums",
@@ -18,57 +26,107 @@
       "entry": "ui/rail.html"
     }
   ],
-  "widgets": [
-    {
-      "id": "board",
-      "label": "Forums",
-      "description": "Browse categories, read and write threads, search.",
-      "icon": "ui/forums.svg",
-      "defaultEnabled": true,
-      "full": "ui/board.html"
-    }
-  ],
   "collections": [
     {
       "name": "sections",
-      "fields": [{ "key": "order", "type": "number", "index": true }]
+      "fields": [
+        {
+          "key": "order",
+          "type": "number",
+          "index": true
+        }
+      ],
+      "onDelete": "restrict"
     },
     {
       "name": "categories",
       "parent": "sections",
-      "fields": [{ "key": "order", "type": "number", "index": true }]
+      "fields": [
+        {
+          "key": "order",
+          "type": "number",
+          "index": true
+        }
+      ]
     },
     {
       "name": "threads",
       "parent": "categories",
       "fields": [
-        { "key": "category", "type": "string", "index": true },
-        { "key": "lastPost", "type": "date", "index": true },
-        { "key": "pinned", "type": "boolean", "index": true },
-        { "key": "title", "type": "string", "search": true }
+        {
+          "key": "category",
+          "type": "string",
+          "index": true
+        },
+        {
+          "key": "lastPost",
+          "type": "date",
+          "index": true
+        },
+        {
+          "key": "pinned",
+          "type": "boolean",
+          "index": true
+        },
+        {
+          "key": "title",
+          "type": "string",
+          "search": true
+        }
       ]
     },
     {
       "name": "posts",
       "parent": "threads",
       "fields": [
-        { "key": "category", "type": "string", "index": true },
-        { "key": "at", "type": "date", "index": true },
-        { "key": "body", "type": "string", "search": true }
+        {
+          "key": "category",
+          "type": "string",
+          "index": true
+        },
+        {
+          "key": "at",
+          "type": "date",
+          "index": true
+        },
+        {
+          "key": "body",
+          "type": "string",
+          "search": true
+        }
       ]
     },
     {
-      "name": "roles",
-      "fields": [{ "key": "name", "type": "string", "index": true }]
+      "name": "role-settings",
+      "fields": [
+        {
+          "key": "role",
+          "type": "string",
+          "index": true
+        }
+      ]
     },
     {
       "name": "reads",
-      "fields": [{ "key": "category", "type": "string", "index": true }],
-      "readers": ["server:gm"]
-    },
-    {
-      "name": "nav",
-      "readers": ["server:gm"]
+      "fields": [
+        {
+          "key": "category",
+          "type": "string",
+          "index": true
+        }
+      ],
+      "readers": [
+        "server:gm"
+      ]
     }
-  ]
+  ],
+  "tabs": [
+    {
+      "id": "board",
+      "label": "Forums",
+      "icon": "ui/forums.svg",
+      "entry": "ui/board.html"
+    }
+  ],
+  "settingsPage": "ui/settings.html"
 }
