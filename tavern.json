@@ -25,7 +25,8 @@
       "kind": "rail",
       "label": "Forums",
       "icon": "ui/forums.svg",
-      "entry": "ui/rail.html"
+      "entry": "ui/rail.html",
+      "singleTab": true
     }
   ],
   "collections": [
@@ -37,16 +38,19 @@
           "type": "number",
           "index": true
         }
-      ],
-      "onDelete": "restrict"
+      ]
     },
     {
       "name": "categories",
-      "parent": "sections",
       "fields": [
         {
           "key": "order",
           "type": "number",
+          "index": true
+        },
+        {
+          "key": "section",
+          "type": "string",
           "index": true
         }
       ]
@@ -73,7 +77,13 @@
         {
           "key": "title",
           "type": "string",
-          "search": true
+          "search": true,
+          "index": true
+        },
+        {
+          "key": "replies",
+          "type": "number",
+          "index": true
         }
       ]
     },

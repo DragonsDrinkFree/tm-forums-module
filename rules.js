@@ -100,6 +100,34 @@ function syncReaders() {
   }
 }
 
+/** The section a category sits in: `data.section`, or (older records) the parent it was made under. */
+const sectionOf = (c) => c.data.section || c.parent;
+
+/** One line of a post, for the "last post" preview: no quotes, no Markdown marks. */
+function previewOf(body) {
+  const line = String(body)
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l && !l.startsWith('>'));
+  return (line || '').replace(/[*_`#~]|\[|\]\([^)]*\)/g, '').slice(0, 110);
+}
+
+/** Recompute a thread's reply count and last-post details from its posts (after a reply or delete). */
+function refreshThread(threadId) {
+  const thread = tavern.collections.get('threads', threadId);
+  if (!thread) return;
+  const total = tavern.collections.count('posts', { parent: threadId });
+  const last = tavern.collections.query('posts', { parent: threadId, sort: '-created', limit: 1 }).records[0];
+  tavern.collections.update('threads', threadId, {
+    data: {
+      replies: Math.max(0, total - 1),
+      ...(last
+        ? { lastPost: last.data.at, lastBy: last.author, lastPreview: previewOf(last.data.body) }
+        : {}),
+    },
+  });
+}
+
 const needAdmin = (ctx) => (isAdmin(ctx.user) ? null : fail('Only forum admins can do that'));
 
 function categoryFor(ctx, id, atLeast) {
@@ -152,12 +180,13 @@ tavern.actions.register('section-save', (ctx) => {
 tavern.actions.register('section-delete', (ctx) => {
   const denied = needAdmin(ctx);
   if (denied) return denied;
-  try {
-    // The sections collection is `onDelete: "restrict"`: core refuses while categories remain.
-    return { removed: tavern.collections.delete('sections', String(ctx.args.id)) };
-  } catch (err) {
+  const id = String(ctx.args.id);
+  // Deleting a section deletes any record held under it, so refuse while a category is in it
+  // (by `data.section`, or an older category still parented to it).
+  if (all('categories').some((c) => sectionOf(c) === id || c.parent === id)) {
     return fail('Move or remove its categories first');
   }
+  return { removed: tavern.collections.delete('sections', id) };
 });
 
 tavern.actions.register('category-save', (ctx) => {
@@ -175,11 +204,9 @@ tavern.actions.register('category-save', (ctx) => {
     if (!a.section || !tavern.collections.get('sections', String(a.section))) {
       return fail('Pick a section for it');
     }
-    const order = tavern.collections.count('categories', { parent: String(a.section) });
-    cat = tavern.collections.create('categories', {
-      data: { ...data, order },
-      parent: String(a.section),
-    });
+    const section = String(a.section);
+    const order = all('categories').filter((c) => sectionOf(c) === section).length;
+    cat = tavern.collections.create('categories', { data: { ...data, order, section } });
   }
   syncReaders();
   return cat;
@@ -189,6 +216,50 @@ tavern.actions.register('category-delete', (ctx) => {
   const denied = needAdmin(ctx);
   if (denied) return denied;
   return { removed: tavern.collections.delete('categories', String(ctx.args.id)) };
+});
+
+/**
+ * Drag and drop: `layout` is every section, top to bottom, each with its categories in order:
+ * [{ id, categories: [categoryId, ...] }, ...]. A category listed under another section moves there.
+ */
+tavern.actions.register('reorder', (ctx) => {
+  const denied = needAdmin(ctx);
+  if (denied) return denied;
+  const layout = Array.isArray(ctx.args.layout) ? ctx.args.layout : [];
+  const sections = new Map(all('sections').map((s) => [s.id, s]));
+  const cats = new Map(all('categories').map((c) => [c.id, c]));
+  layout.forEach((s, si) => {
+    const sec = sections.get(String(s.id));
+    if (!sec) return;
+    if (sec.data.order !== si) tavern.collections.update('sections', sec.id, { data: { order: si } });
+    (s.categories || []).forEach((cid, ci) => {
+      const cat = cats.get(String(cid));
+      if (!cat) return;
+      if (cat.data.order !== ci || sectionOf(cat) !== sec.id) {
+        tavern.collections.update('categories', cat.id, { data: { order: ci, section: sec.id } });
+      }
+    });
+  });
+  return { ok: true };
+});
+
+/**
+ * One-off upkeep for forums made before topics were sortable: index fields are written when a record
+ * is, so older threads are rewritten once (the `_meta` marker in role-settings says it's done).
+ */
+tavern.actions.register('maintenance', (ctx) => {
+  const denied = needAdmin(ctx);
+  if (denied) return denied;
+  const done = tavern.collections.query('role-settings', { where: { role: '_meta:sort1' }, limit: 1 }).records[0];
+  if (done) return { ran: false };
+  for (const t of all('threads')) {
+    tavern.collections.update('threads', t.id, {
+      data: { replies: Number(t.data.replies || 0), title: t.data.title },
+    });
+    refreshThread(t.id);
+  }
+  tavern.collections.create('role-settings', { data: { role: '_meta:sort1' } });
+  return { ran: true };
 });
 
 // ---- roles (admins) ---------------------------------------------------------------------------
@@ -289,7 +360,7 @@ tavern.actions.register('thread-create', (ctx) => {
   if (!roomFor(ctx.user)) return fail(`You have ${MAX_POSTS_PER_MEMBER} posts here: remove some first`);
   const now = Date.now();
   const thread = tavern.collections.create('threads', {
-    data: { title, category: got.cat.id, pinned: false, locked: false, lastPost: now, lastBy: ctx.user.id, replies: 0 },
+    data: { title, category: got.cat.id, pinned: false, locked: false, lastPost: now, lastBy: ctx.user.id, lastPreview: previewOf(body), replies: 0 },
     parent: got.cat.id,
   });
   const post = tavern.collections.create('posts', {
@@ -313,6 +384,7 @@ tavern.actions.register('reply', (ctx) => {
     data: {
       lastPost: post.data.at,
       lastBy: ctx.user.id,
+      lastPreview: previewOf(body),
       replies: Number(thread.data.replies || 0) + 1,
     },
   });
@@ -330,7 +402,9 @@ tavern.actions.register('post-edit', (ctx) => {
   }
   const body = text(ctx.args.body, 10_000);
   if (!body) return fail('A post needs some words');
-  return tavern.collections.update('posts', post.id, { data: { body, edited: Date.now() } });
+  const saved = tavern.collections.update('posts', post.id, { data: { body, edited: Date.now() } });
+  refreshThread(thread.id); // the edited post may be the one the list previews
+  return saved;
 });
 
 tavern.actions.register('post-delete', (ctx) => {
@@ -347,9 +421,7 @@ tavern.actions.register('post-delete', (ctx) => {
     return { removed: tavern.collections.delete('threads', thread.id), thread: true };
   }
   const removed = tavern.collections.delete('posts', post.id);
-  tavern.collections.update('threads', thread.id, {
-    data: { replies: Math.max(0, Number(thread.data.replies || 0) - 1) },
-  });
+  refreshThread(thread.id); // reply count, and who/when/what is now last
   return { removed };
 });
 

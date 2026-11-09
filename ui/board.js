@@ -182,8 +182,19 @@
     if (out) await run('reply', { thread: t.id, body: out.body });
   }
 
+  // How a category's topics are ordered (remembered per viewer). `sort` is an index field or `created`.
+  const SORTS = [
+    { id: 'activity', label: 'Latest activity', sort: '-lastPost' },
+    { id: 'newest', label: 'Newest topics', sort: '-created' },
+    { id: 'oldest', label: 'Oldest topics', sort: 'created' },
+    { id: 'replies', label: 'Most replies', sort: '-replies' },
+    { id: 'subject', label: 'Subject A–Z', sort: 'title' },
+  ];
+  const currentSort = () => SORTS.find((x) => x.id === TMF.store.get('tmf.sort')) || SORTS[0];
+
   async function category(cat) {
     const level = levelOf(cat.id);
+    const order = currentSort();
     if (!view.opened) {
       // Remember what was new when it was opened, so topics stay highlighted while the dot clears.
       const marks = await tavern.collections.query('reads', { where: { category: cat.id }, limit: 1 });
@@ -191,11 +202,11 @@
       view.opened = true;
     }
     const [pinned, rest] = await Promise.all([
-      tavern.collections.query('threads', { parent: cat.id, where: { pinned: true }, sort: '-lastPost' }),
+      tavern.collections.query('threads', { parent: cat.id, where: { pinned: true }, sort: order.sort }),
       tavern.collections.query('threads', {
         parent: cat.id,
         where: { pinned: false },
-        sort: '-lastPost',
+        sort: order.sort,
         limit: PAGE * (view.pages || 1),
       }),
     ]);
@@ -223,7 +234,10 @@
           'div',
           { className: 'last' },
           el('div', { textContent: `by ${await nameOf(t.data.lastBy || t.author)}` }),
-          el('div', { className: 'meta', title: full(t.data.lastPost), textContent: when(t.data.lastPost) }),
+          el('div', { className: 'meta', textContent: full(t.data.lastPost) }),
+          t.data.lastPreview
+            ? el('div', { className: 'meta preview', title: t.data.lastPreview, textContent: `“${t.data.lastPreview}”` })
+            : null,
         ),
       );
     const head = (label) =>
@@ -252,7 +266,27 @@
             : el('span', { className: 'meta', textContent: 'Read only for you' }),
           perms.admin ? button('Edit category', () => void editCategory(cat), { className: 'small' }) : null,
         ),
-        el('span', { className: 'meta', textContent: `${total} topic${total === 1 ? '' : 's'}` }),
+        el(
+          'span',
+          { className: 'row' },
+          el('span', { className: 'meta', textContent: `${total} topic${total === 1 ? '' : 's'}` }),
+          (() => {
+            const pick = el(
+              'select',
+              {
+                ariaLabel: 'Sort topics by',
+                onchange: () => {
+                  TMF.store.set('tmf.sort', pick.value);
+                  view.pages = 1;
+                  void render();
+                },
+              },
+              ...SORTS.map((x) => el('option', { value: x.id, textContent: x.label, selected: x.id === order.id })),
+            );
+            pick.style.width = 'auto';
+            return pick;
+          })(),
+        ),
       ),
       group('Pinned', pinRows),
       group('Topics', restRows),
@@ -454,6 +488,8 @@
 
   async function start() {
     perms = (await TMF.loadPerms()) || perms;
+    // Forums made before topics were sortable need a one-off reindex (admins only; it remembers).
+    if (perms.admin) await run('maintenance');
     $('roles-btn').hidden = !perms.admin;
     $('roles-btn').onclick = () => go({ kind: 'roles' });
     $('search').onclick = () => void search();

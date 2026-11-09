@@ -140,7 +140,7 @@ li.unread .title {
 .thead,
 .trow {
   display: grid;
-  grid-template-columns: 1fr 80px 190px;
+  grid-template-columns: 1fr 80px 260px;
   gap: 8px;
   padding: 7px 10px;
   align-items: center;
@@ -315,4 +315,23 @@ table.grants th {
   .trow {
     grid-template-columns: 1fr 50px 100px;
   }
+}
+
+/* Drag and drop in the toolbox */
+.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent, Highlight);
+}
+.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent, Highlight);
+}
+.drop-into {
+  outline: 2px dashed var(--accent, Highlight);
+  outline-offset: -2px;
+}
+
+.preview {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
 }

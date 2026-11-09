@@ -67,3 +67,40 @@ sanitising it.
 correct (undefined isn't JSON), and the path is helpful, but a plain "undefined isn't allowed" would
 save a round trip, and dropping undefined keys (as `JSON.stringify` does) would be friendlier. Our bug
 (F-ours, fixed); noted because the same trap exists in `collections.search(…, { where: undefined })`.
+
+---
+
+# Round 3 (2026-11-09): single tab, reordering, sortable topics
+
+## Adopted from core
+
+- **`singleTab` (ADR 0107)** is on for the Forums toolbox. Category clicks and "Browse all forums" keep
+  calling `openTab('board', { key, title, args })`, and each now replaces the one Forums tab. The tab's
+  page reads `tavern.ui.args()` once at load, which is enough only if a replaced tab loads the page
+  afresh. **Please confirm** the page is reloaded (not kept alive with new args).
+
+## New gaps
+
+- **F09: a record's parent can't be changed.** Dragging a category into another section is a move, but
+  `collections.update` takes `data`, `ops` and `readers` only. We stopped using `parent` for
+  category → section and keep the section in an indexed field (`data.section`). Costs:
+  - sections lose `onDelete: "restrict"` (its children are no longer held by parent), so
+    `section-delete` checks for categories itself;
+  - categories made earlier still carry their old parent, so deleting that section would cascade
+    to them. `section-delete` refuses while any category is still parented to it, even if it was
+    moved away, so such a section can't be deleted.
+
+  **Would remove it:** `collections.move(collection, id, parent)` (or `parent` in `CollectionEdit`),
+  with readers following the new parent.
+- **F10: adding an index field doesn't index records already stored.** We made topics sortable by
+  replies and subject by adding `replies` and indexing `title`. Older threads have no index rows for
+  them and would drop out of those sorts. We rewrite them once (`maintenance`, admin-only, remembers
+  itself in a `_meta` record). **Would remove it:** core reindexes a collection when a package update
+  changes its fields, or offers `collections.reindex(collection)`.
+- **F11: the CLI lags the app.** `packages/cli/dist/cli.js` (built 2026-11-04) rejects `singleTab`
+  (`Invalid input → at features[0]`), so `tavern validate` fails on a manifest the app accepts. We
+  validate a copy without the key. A rebuild with each core change, or the CLI sharing the app's
+  protocol build, would keep them in step.
+- **Please confirm: HTML5 drag and drop works inside a rail page.** The toolbox uses
+  `draggable`, `dragstart`, `dragover` and `drop` within its own sandboxed frame; the app's own drag of
+  documents isn't involved. Same for `tavern.ui.menu` opened from a `contextmenu` event.

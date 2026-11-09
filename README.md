@@ -9,10 +9,15 @@ are on-demand records that are queried, paged and searched, never synced to ever
   - **+ Section** and **+ Category** buttons (forum admins only);
   - sections are collapsible headers;
   - categories are the boards. A **dot** marks a category with posts by others since you last looked.
-- **Workspace tabs.** Clicking a category opens it in its own tab (one per category); "Browse all
-  forums" opens the full listing. Inside a tab:
+- **One Forums tab** (`singleTab`): clicking a category, or "Browse all forums", shows it in the
+  Forums tab, replacing what the last click opened. Admins can **drag** sections and categories to
+  reorder them (a category can be dropped into another section) and **right-click** either to edit
+  or delete it. Inside the tab:
   - main listing → category → thread, with Back and breadcrumbs;
-  - threads sorted by latest activity, pinned first, paged;
+  - topics sorted by latest activity by default, and by newest, oldest, most replies or subject
+    (remembered per viewer), pinned first, paged;
+  - each topic shows its reply count, who posted last, when (date and time), and a one-line preview
+    of that post, without opening it;
   - posts oldest first, time-stamped, drawn as Markdown (live `@action` links off);
   - **search** across threads and replies, in one category or all.
 - **Roles** are core's package roles, made by admins in the module's settings page (the gear) or in

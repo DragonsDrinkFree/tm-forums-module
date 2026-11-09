@@ -88,7 +88,8 @@ window.TMF = (() => {
     ]);
     return secs.records.map((s) => ({
       section: s,
-      categories: cats.records.filter((c) => c.parent === s.id),
+      // A category's section is `data.section` (older ones: the parent they were made under).
+      categories: cats.records.filter((c) => (c.data.section || c.parent) === s.id),
     }));
   }
 
