@@ -3,7 +3,7 @@
   "id": "tm-forums",
   "kind": "module",
   "name": "Forums",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Web-style forums for Moot Halls and campaigns. Sections group categories; each category opens in its own workspace tab and holds threads and replies, kept as on-demand collection records. Roles made by admins grant per-category access, moderation or admin rights. A dot marks categories with new posts.",
   "manifest": "https://github.com/DragonsDrinkFree/tm-forums-module/releases/latest/download/tavern.json",
   "download": "https://github.com/DragonsDrinkFree/tm-forums-module/releases/latest/download/tm-forums-module.zip",
